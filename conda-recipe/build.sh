@@ -24,9 +24,11 @@ export DPL_ROOT=$PREFIX
 # TBBROOT/lib prerequisites.  Mirror the full libtbb* tree into a staging dir,
 # adding unversioned symlinks where missing.
 export TBBROOT="$SRC_DIR/__tbbroot"
-mkdir -p "$TBBROOT/lib" "$TBBROOT/include"
+mkdir -p "$TBBROOT/lib"
 
 # Symlink TBB headers (TBBROOT/include -> $PREFIX/include)
+# Note: do NOT mkdir TBBROOT/include first — ln -sfn needs the target path to
+# not exist as a directory, otherwise it creates include/include inside it.
 ln -sfn "$PREFIX/include" "$TBBROOT/include"
 
 # Mirror all libtbb* shared objects and create unversioned symlinks if absent

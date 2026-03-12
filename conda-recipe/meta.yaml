@@ -76,16 +76,16 @@ outputs:
   - name: dal-gpu
     build:
       skip: true  # [cxx_compiler != "dpcpp" or not linux64]
-    script: pack.sh  # [linux]
+    script: pack.sh  # [linux64]
     requirements:
       run:
         - {{ pin_subpackage('dal', exact=True) }}
-        - intel-sycl-rt  # [linux64]
-        - mkl-dpcpp  # [linux64]
+        - intel-sycl-rt
+        - mkl-dpcpp
     test:
       commands:
-        - test -f $PREFIX/lib/libonedal_dpc.so.{{ major_binary_version }}  # [linux]
-        - test -f $PREFIX/lib/libonedal_parameters_dpc.so.{{ major_binary_version }}  # [linux]
+        - test -f $PREFIX/lib/libonedal_dpc.so.{{ major_binary_version }}  # [linux64]
+        - test -f $PREFIX/lib/libonedal_parameters_dpc.so.{{ major_binary_version }}  # [linux64]
     about:
       summary: oneAPI Data Analytics Library (oneDAL) GPU/DPC++ runtime library
 
@@ -124,7 +124,7 @@ outputs:
         - mkl-devel
         - mkl-static
         - mkl-devel-dpcpp  # [ cxx_compiler == "dpcpp" ]
-        - dal-gpu =={{ version }}  # [ cxx_compiler == "dpcpp" ]
+        - {{ pin_subpackage('dal-gpu', exact=True) }}  # [ cxx_compiler == "dpcpp" ]
       source_files:
         - examples
       script: test-devel.sh  # [linux]

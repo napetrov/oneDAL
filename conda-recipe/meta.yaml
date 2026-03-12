@@ -80,7 +80,7 @@ outputs:
     requirements:
       run:
         - {{ pin_subpackage('dal', exact=True) }}
-        - intel-sycl-rt =={{ cxx_compiler_version }}
+        - intel-sycl-rt >={{ cxx_compiler_version }},<{{ (cxx_compiler_version.split('.')[0]|int + 1) }}
         - mkl-dpcpp
     test:
       commands:

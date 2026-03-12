@@ -78,9 +78,11 @@ outputs:
       skip: true  # [cxx_compiler != "dpcpp" or not linux64]
     script: pack.sh  # [linux64]
     requirements:
+      host:
+        - intel-sycl-rt
       run:
         - {{ pin_subpackage('dal', exact=True) }}
-        - intel-sycl-rt >={{ cxx_compiler_version }},<{{ (cxx_compiler_version.split('.')[0]|int + 1) }}
+        - {{ pin_compatible('intel-sycl-rt', max_pin='x') }}
         - mkl-dpcpp
     test:
       commands:

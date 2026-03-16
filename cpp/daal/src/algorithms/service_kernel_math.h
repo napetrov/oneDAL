@@ -46,6 +46,7 @@
 #include "src/externals/service_math.h"
 #include "src/services/service_profiler.h"
 
+#include <mutex>
 #if defined(DAAL_INTEL_CPP_COMPILER)
     #include "immintrin.h"
 #endif
@@ -293,7 +294,20 @@ protected:
         return safeStat.detach();
     }
 
-    // compute (A x B')
+    // AMX BF16 runtime check
+    static bool knn_has_amx_bf16() {
+        static bool v = [](){
+            unsigned int a=0,b=0,c=0,d=0;
+            __asm__ volatile("cpuid":"=a"(a),"=b"(b),"=c"(c),"=d"(d):"a"(7),"c"(0));
+            if (!((d>>22)&1u)) return false;
+            unsigned int lo=0,hi=0;
+            __asm__ volatile("xgetbv":"=a"(lo),"=d"(hi):"c"(0));
+            return ((lo>>17)&3u)==3u;
+        }(); return v;
+    }
+
+    // compute (A x B') -- EuclideanDistances inner GEMM
+    // GEMM call: out = B * A^T  (col-major: M=nRowsB, N=nRowsA, K=nColsA)
     void computeABt(const FPType * const a, const FPType * const b, const size_t nRowsA, const size_t nColsA, const size_t nRowsB, FPType * const out)
     {
         const char transa    = 't';
@@ -307,6 +321,29 @@ protected:
         const FPType beta    = 0.0;
         const DAAL_INT ldaty = nRowsB;
 
+        // AMX BF16 path: float only, all dims >= 64
+        if constexpr (std::is_same<FPType, float>::value)
+        if (knn_has_amx_bf16() && _m >= 64 && _n >= 64 && _k >= 64)
+        {
+            union { float f; unsigned int u; } cv;
+            const size_t szA = (size_t)_n * (size_t)_k;
+            const size_t szB = (size_t)_m * (size_t)_k;
+            MKL_BF16* a16 = (MKL_BF16*)mkl_malloc(szA * sizeof(MKL_BF16), 64);
+            MKL_BF16* b16 = (MKL_BF16*)mkl_malloc(szB * sizeof(MKL_BF16), 64);
+            if (a16 && b16) {
+                for (size_t i = 0; i < szA; i++) { cv.f = a[i]; a16[i] = (MKL_BF16)(cv.u >> 16); }
+                for (size_t i = 0; i < szB; i++) { cv.f = b[i]; b16[i] = (MKL_BF16)(cv.u >> 16); }
+                // col-major: C=B16*A16^T  => cblas: NoTrans B, Trans A
+                cblas_gemm_bf16bf16f32(CblasColMajor, CblasNoTrans, CblasTrans,
+                    (MKL_INT)_m, (MKL_INT)_n, (MKL_INT)_k,
+                    1.0f, b16, (MKL_INT)_m, a16, (MKL_INT)_n,
+                    0.0f, out, (MKL_INT)_m);
+                mkl_free(a16); mkl_free(b16);
+                return;
+            }
+            if (a16) mkl_free(a16);
+            if (b16) mkl_free(b16);
+        }
         BlasInst<FPType, cpu>::xxgemm(&transa, &transb, &_m, &_n, &_k, &alpha, b, &lda, a, &ldy, &beta, out, &ldaty);
     }
 

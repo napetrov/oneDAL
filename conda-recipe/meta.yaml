@@ -34,8 +34,10 @@ build:
   number: {{ buildnumber }}
   string: h{{ git_hash }}_{{ buildnumber }}_{{ cxx_compiler }}
   include_recipe: False
-  ignore_run_exports_from:
-    - dpcpp_impl_linux-64  # [linux64 or win]
+  # Note: ignore_run_exports_from is NOT set globally here.
+  # It is set per-output: dal (CPU) ignores dpcpp_impl run_exports,
+  # while dal-gpu does NOT ignore them so it automatically inherits
+  # the intel-sycl-rt pin that dpcpp_impl_linux-64 declares.
   script_env:
     # All build targets are used by default and AVX2 only for CI.
     # Override REQCPU to reduce manual build time if needed: `REQCPU=avx512 conda build .`
@@ -62,6 +64,11 @@ requirements:
 
 outputs:
   - name: dal
+    build:
+      # Suppress dpcpp_impl run_exports for the CPU-only package:
+      # dal does not need GPU/SYCL runtime and must not pull intel-sycl-rt.
+      ignore_run_exports_from:
+        - dpcpp_impl_linux-64  # [linux64 or win]
     script: pack.sh  # [linux]
     requirements:
       run:
@@ -76,14 +83,17 @@ outputs:
   - name: dal-gpu
     build:
       skip: true  # [cxx_compiler != "dpcpp" or not linux64]
+      # Do NOT set ignore_run_exports_from here: dpcpp_impl_linux-64 declares
+      # run_exports with a compatible intel-sycl-rt pin, and dal-gpu must
+      # inherit it automatically so the GPU runtime version stays in sync
+      # with the compiler used to build this package.
     script: pack.sh  # [linux64]
     requirements:
-      host:
-        - intel-sycl-rt
       run:
         - {{ pin_subpackage('dal', exact=True) }}
-        - {{ pin_compatible('intel-sycl-rt', max_pin='x') }}
         - mkl-dpcpp
+        # intel-sycl-rt is intentionally omitted here: it is injected
+        # automatically via run_exports from dpcpp_impl_linux-64.
     test:
       commands:
         - test -f $PREFIX/lib/libonedal_dpc.so.{{ major_binary_version }}  # [linux64]

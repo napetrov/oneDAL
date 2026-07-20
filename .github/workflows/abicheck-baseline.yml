@@ -69,16 +69,21 @@ jobs:
       # actually compares against: daal produces libonedal_core.so (the
       # classic DAAL API), oneapi_c produces libonedal.so (the oneapi::dal
       # API) -- see the "Make onedal debug" step in LinuxMakeDPCPP.
-      # setvars.sh resolves MKLROOT by picking the numerically-highest
-      # version dir under /opt/intel/oneapi/mkl/, with no awareness of which
-      # one is actually complete. `apt.sh dpcpp` (Install DPC++, above) pulls
-      # an *unpinned* intel-oneapi-runtime-mkl as a transitive dependency of
-      # intel-oneapi-runtime-libs, which can install a newer MKL version than
-      # the devel package `apt.sh mkl` pins -- runtime-only, so it has no
-      # static libs and the link step fails looking for them there. Re-point
-      # MKLROOT at whichever installed version dir actually has the '.a'
-      # files this build links against, rather than trusting setvars' latest
-      # dir picked by version-number.
+      #
+      # setvars.sh resolves both MKLROOT and the compiler dir on PATH by
+      # picking the numerically-highest version dir under
+      # /opt/intel/oneapi/{mkl,compiler}/, with no awareness of which one is
+      # actually complete. `apt.sh dpcpp` (Install DPC++, above) pulls an
+      # *unpinned* intel-oneapi-runtime-libs meta-package as a transitive
+      # dependency, which in turn drags in unpinned intel-oneapi-runtime-mkl
+      # and intel-oneapi-runtime-compilers -- both runtime-only (no static
+      # libs, no icx/icpx binaries) and often newer than the devel packages
+      # `apt.sh dpcpp`/`apt.sh mkl` pin. setvars then points MKLROOT/PATH at
+      # those newer-but-incomplete runtime dirs instead of the pinned devel
+      # ones, so the link step can't find '.a' files and icx/icpx aren't on
+      # PATH at all. Re-point both at whichever installed version dir
+      # actually has the devel bits this build needs, rather than trusting
+      # setvars' latest-by-version-number picks.
       - name: Build daal + oneapi_c (avx2 debug)
         working-directory: __baseline_src
         run: |
@@ -88,7 +93,13 @@ jobs:
               export MKLROOT="${d%/}"
             fi
           done
+          for d in /opt/intel/oneapi/compiler/*/; do
+            if [ -x "${d}bin/icx" ]; then
+              export PATH="${d%/}/bin:$PATH"
+            fi
+          done
           echo "Using MKLROOT=$MKLROOT"
+          echo "Using icx=$(command -v icx), icpx=$(command -v icpx)"
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target daal --debug symbols --jobs 20
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target oneapi_c --debug symbols --jobs 20
 
@@ -100,9 +111,18 @@ jobs:
       # the matching comment in ci.yml's LinuxAbicheckScan job. #606 made
       # --gcc-path recognize icx/icpx by name, so gcc-path: icpx below needs
       # no symlink workaround.
+      #
+      # Same setvars.sh latest-by-version-number caveat as the build step
+      # above: re-point PATH at the compiler dir that actually has icx/icpx,
+      # not whatever runtime-only dir setvars picked.
       - name: Put icpx on PATH
         run: |
           source /opt/intel/oneapi/setvars.sh
+          for d in /opt/intel/oneapi/compiler/*/; do
+            if [ -x "${d}bin/icx" ]; then
+              export PATH="${d%/}/bin:$PATH"
+            fi
+          done
           echo "PATH=$PATH" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$LD_LIBRARY_PATH" >> "$GITHUB_ENV"
 

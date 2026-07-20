@@ -57,6 +57,19 @@ jobs:
           ref: ${{ steps.baseline.outputs.tag }}
           path: __baseline_src
 
+      # This job checks out the repo twice (main + __baseline_src) and builds
+      # both daal and oneapi_c in debug mode (--debug symbols, uncompressed),
+      # which is enough to exhaust the ~20GB free on a stock ubuntu-24.04
+      # runner once the DPC++/MKL/TBB installs land too -- confirmed via a
+      # prior run failing on "No space left on device" during ar archiving.
+      # Free the preinstalled toolchains this job never uses before
+      # installing anything Intel-side.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+            "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /opt/hostedtoolcache
+          df -h /
+
       - name: Install DPC++
         working-directory: __baseline_src
         run: .ci/env/apt.sh dpcpp

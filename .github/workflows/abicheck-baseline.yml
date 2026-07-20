@@ -70,20 +70,20 @@ jobs:
       # classic DAAL API), oneapi_c produces libonedal.so (the oneapi::dal
       # API) -- see the "Make onedal debug" step in LinuxMakeDPCPP.
       #
-      # setvars.sh resolves both MKLROOT and the compiler dir on PATH by
+      # setvars.sh resolves MKLROOT/TBBROOT and the compiler dir on PATH by
       # picking the numerically-highest version dir under
-      # /opt/intel/oneapi/{mkl,compiler}/, with no awareness of which one is
-      # actually complete. `apt.sh dpcpp` (Install DPC++, above) pulls an
+      # /opt/intel/oneapi/{mkl,tbb,compiler}/, with no awareness of which one
+      # is actually complete. `apt.sh dpcpp` (Install DPC++, above) pulls an
       # *unpinned* intel-oneapi-runtime-libs meta-package as a transitive
-      # dependency, which in turn drags in unpinned intel-oneapi-runtime-mkl
-      # and intel-oneapi-runtime-compilers -- both runtime-only (no static
-      # libs, no icx/icpx binaries) and often newer than the devel packages
-      # `apt.sh dpcpp`/`apt.sh mkl` pin. setvars then points MKLROOT/PATH at
-      # those newer-but-incomplete runtime dirs instead of the pinned devel
-      # ones, so the link step can't find '.a' files and icx/icpx aren't on
-      # PATH at all. Re-point both at whichever installed version dir
-      # actually has the devel bits this build needs, rather than trusting
-      # setvars' latest-by-version-number picks.
+      # dependency, which in turn drags in unpinned intel-oneapi-runtime-mkl,
+      # intel-oneapi-runtime-compilers, and intel-oneapi-tbb -- all
+      # runtime-only (no static libs, no icx/icpx binaries, no tbb/tbb.h
+      # header) and often newer than the devel packages `apt.sh dpcpp`/`apt.sh
+      # mkl` pin. setvars then points MKLROOT/TBBROOT/PATH at those
+      # newer-but-incomplete runtime dirs instead of the pinned devel ones.
+      # Re-point all three at whichever installed version dir actually has
+      # the devel bits this build needs, rather than trusting setvars'
+      # latest-by-version-number picks.
       - name: Build daal + oneapi_c (avx2 debug)
         working-directory: __baseline_src
         run: |
@@ -93,12 +93,18 @@ jobs:
               export MKLROOT="${d%/}"
             fi
           done
+          for d in /opt/intel/oneapi/tbb/*/; do
+            if [ -f "${d}include/tbb/tbb.h" ]; then
+              export TBBROOT="${d%/}"
+            fi
+          done
           for d in /opt/intel/oneapi/compiler/*/; do
             if [ -x "${d}bin/icx" ]; then
               export PATH="${d%/}/bin:$PATH"
             fi
           done
           echo "Using MKLROOT=$MKLROOT"
+          echo "Using TBBROOT=$TBBROOT"
           echo "Using icx=$(command -v icx), icpx=$(command -v icpx)"
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target daal --debug symbols --jobs 20
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target oneapi_c --debug symbols --jobs 20

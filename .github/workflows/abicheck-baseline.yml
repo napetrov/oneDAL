@@ -69,10 +69,26 @@ jobs:
       # actually compares against: daal produces libonedal_core.so (the
       # classic DAAL API), oneapi_c produces libonedal.so (the oneapi::dal
       # API) -- see the "Make onedal debug" step in LinuxMakeDPCPP.
+      # setvars.sh resolves MKLROOT by picking the numerically-highest
+      # version dir under /opt/intel/oneapi/mkl/, with no awareness of which
+      # one is actually complete. `apt.sh dpcpp` (Install DPC++, above) pulls
+      # an *unpinned* intel-oneapi-runtime-mkl as a transitive dependency of
+      # intel-oneapi-runtime-libs, which can install a newer MKL version than
+      # the devel package `apt.sh mkl` pins -- runtime-only, so it has no
+      # static libs and the link step fails looking for them there. Re-point
+      # MKLROOT at whichever installed version dir actually has the '.a'
+      # files this build links against, rather than trusting setvars' latest
+      # dir picked by version-number.
       - name: Build daal + oneapi_c (avx2 debug)
         working-directory: __baseline_src
         run: |
           source /opt/intel/oneapi/setvars.sh
+          for d in /opt/intel/oneapi/mkl/*/; do
+            if [ -f "${d}lib/libmkl_intel_ilp64.a" ]; then
+              export MKLROOT="${d%/}"
+            fi
+          done
+          echo "Using MKLROOT=$MKLROOT"
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target daal --debug symbols --jobs 20
           .ci/scripts/build.sh --compiler icx --optimizations avx2 --target oneapi_c --debug symbols --jobs 20
 

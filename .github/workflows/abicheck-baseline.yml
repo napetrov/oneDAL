@@ -70,24 +70,6 @@ jobs:
             "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /opt/hostedtoolcache
           df -h /
 
-      # cpp/daal/include/data_management/data/arrow_numeric_table.h
-      # unconditionally #includes <arrow/table.h> (an optional integration
-      # header for consumers who bring their own Apache Arrow -- oneDAL's own
-      # build never compiles it and apt.sh installs nothing for it). abicheck
-      # walks every header under -H cpp/daal/include with no per-file
-      # exclusion mechanism, so the header scan needs a real Arrow C++ dev
-      # package on the box or it fails to parse. libarrow-dev is not in
-      # Ubuntu's own repos -- install via Arrow's official apt source, per
-      # https://arrow.apache.org/install/.
-      - name: Install Apache Arrow (for arrow_numeric_table.h)
-        run: |
-          sudo apt-get install -y -V ca-certificates lsb-release wget
-          wget "https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb"
-          sudo apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
-          sudo apt-get update
-          sudo apt-get install -y -V libarrow-dev
-          rm -f apache-arrow-apt-source-latest-*.deb
-
       - name: Install DPC++
         working-directory: __baseline_src
         run: .ci/env/apt.sh dpcpp
@@ -143,6 +125,23 @@ jobs:
       - name: Ensure baseline output directory exists
         run: mkdir -p .github/abicheck-baselines
 
+      # cpp/daal/include/algorithms/moments/low_order_moments_distributed.h
+      # uses Online<algorithmFPType, method> (lines 134/137/153) but only
+      # #includes low_order_moments_types.h -- never
+      # low_order_moments_online.h, where Online is actually declared. This
+      # is a genuine oneDAL header bug, invisible in every normal build only
+      # because daal.h happens to #include low_order_moments_online.h right
+      # before low_order_moments_distributed.h, so Online is already in
+      # scope by include-order accident; any standalone parse of this header
+      # fails with "no template named 'Online'". Tracked separately for a
+      # real upstream fix (do not conflate with this baseline-generation
+      # workflow); patched locally here, in the checked-out __baseline_src
+      # copy only, purely to unblock this one baseline dump run.
+      - name: TEMP local patch -- add missing include in low_order_moments_distributed.h
+        run: |
+          sed -i '30a #include "algorithms/moments/low_order_moments_online.h"' \
+            __baseline_src/cpp/daal/include/algorithms/moments/low_order_moments_distributed.h
+
       # Use icpx itself (via --ast-frontend clang) instead of the default
       # castxml/GCC frontend, so cpp/oneapi/dal's SYCL headers parse -- see
       # the matching comment in ci.yml's LinuxAbicheckScan job. #606 made
@@ -184,29 +183,22 @@ jobs:
       # as clang-family and skips them, falling through to the real g++/gcc
       # on PATH) -- no manual -isystem workaround needed once pinned past
       # that commit.
-      # TEMP DIAGNOSTIC: abicheck's own error report truncates clang's stderr
-      # to the first 1000 characters (abicheck/dumper_clang_errors.py), which
-      # on a deep #include chain + any warnings ahead of the real fatal error
-      # cuts off before the actual cause. Reproduce the exact -ast-dump=json
-      # invocation abicheck uses (one #include per header, aggregated into a
-      # single TU) standalone so the untruncated stderr is visible in this
-      # step's own log instead.
-      - name: DIAGNOSTIC -- reproduce clang header parse with full stderr
-        run: |
-          find __baseline_src/cpp/daal/include -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.h++' -o -name '*.ipp' -o -name '*.tpp' -o -name '*.inc' \) | sort > /tmp/daal_headers.txt
-          wc -l /tmp/daal_headers.txt
-          : > /tmp/daal_agg.hpp
-          while IFS= read -r h; do
-            echo "#include \"$(readlink -f "$h")\"" >> /tmp/daal_agg.hpp
-          done < /tmp/daal_headers.txt
-          set +e
-          icpx -I "$(readlink -f __baseline_src/cpp/daal/include)" -std=c++17 -x c++ -fsyntax-only -ferror-limit=0 -Xclang -ast-dump=json /tmp/daal_agg.hpp > /tmp/daal_ast.json 2> /tmp/daal_stderr.txt
-          echo "exit code: $?"
-          set -e
-          wc -l /tmp/daal_stderr.txt
-          echo "=== full stderr (untruncated) ==="
-          cat /tmp/daal_stderr.txt
-          echo "=== end stderr ==="
+      # cpp/daal/include/data_management/data/arrow_numeric_table.h
+      # unconditionally #includes <arrow/table.h> -- an optional integration
+      # header for consumers who bring their own Apache Arrow. oneDAL's own
+      # build never compiles it and apt.sh installs nothing for it, and
+      # installing libarrow-dev just trades that error for a different one
+      # (Arrow's own <arrow/chunk_resolver.h> needs std::span, i.e. C++20,
+      # while this scan is C++17). Tracked separately as an oneDAL header bug
+      # (a different independent header, low_order_moments_distributed.h,
+      # also fails standalone parsing -- it uses Online<...> without
+      # #including low_order_moments_online.h, only working today because
+      # daal.h happens to include that header first); neither is an abicheck
+      # issue. The library this dump compares against was already built
+      # above and doesn't reference this header, so deleting it here only
+      # affects what -H walks, not the binary side.
+      - name: Exclude the optional Arrow integration header from the scan
+        run: rm -f __baseline_src/cpp/daal/include/data_management/data/arrow_numeric_table.h
 
       - name: Dump baseline snapshot (daal)
         uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main

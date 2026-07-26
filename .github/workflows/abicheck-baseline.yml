@@ -200,9 +200,10 @@ jobs:
             echo "#include \"$(readlink -f "$h")\"" >> /tmp/daal_agg.hpp
           done < /tmp/daal_headers.txt
           set +e
-          icpx -std=c++17 -x c++ -fsyntax-only -ferror-limit=0 -Xclang -ast-dump=json /tmp/daal_agg.hpp > /tmp/daal_ast.json 2> /tmp/daal_stderr.txt
+          icpx -I "$(readlink -f __baseline_src/cpp/daal/include)" -std=c++17 -x c++ -fsyntax-only -ferror-limit=0 -Xclang -ast-dump=json /tmp/daal_agg.hpp > /tmp/daal_ast.json 2> /tmp/daal_stderr.txt
           echo "exit code: $?"
           set -e
+          wc -l /tmp/daal_stderr.txt
           echo "=== full stderr (untruncated) ==="
           cat /tmp/daal_stderr.txt
           echo "=== end stderr ==="

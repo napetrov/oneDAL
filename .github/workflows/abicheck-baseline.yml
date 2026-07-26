@@ -184,6 +184,29 @@ jobs:
       # as clang-family and skips them, falling through to the real g++/gcc
       # on PATH) -- no manual -isystem workaround needed once pinned past
       # that commit.
+      # TEMP DIAGNOSTIC: abicheck's own error report truncates clang's stderr
+      # to the first 1000 characters (abicheck/dumper_clang_errors.py), which
+      # on a deep #include chain + any warnings ahead of the real fatal error
+      # cuts off before the actual cause. Reproduce the exact -ast-dump=json
+      # invocation abicheck uses (one #include per header, aggregated into a
+      # single TU) standalone so the untruncated stderr is visible in this
+      # step's own log instead.
+      - name: DIAGNOSTIC -- reproduce clang header parse with full stderr
+        run: |
+          find __baseline_src/cpp/daal/include -type f \( -name '*.h' -o -name '*.hh' -o -name '*.hpp' -o -name '*.hxx' -o -name '*.h++' -o -name '*.ipp' -o -name '*.tpp' -o -name '*.inc' \) | sort > /tmp/daal_headers.txt
+          wc -l /tmp/daal_headers.txt
+          : > /tmp/daal_agg.hpp
+          while IFS= read -r h; do
+            echo "#include \"$(readlink -f "$h")\"" >> /tmp/daal_agg.hpp
+          done < /tmp/daal_headers.txt
+          set +e
+          icpx -std=c++17 -x c++ -fsyntax-only -ferror-limit=0 -Xclang -ast-dump=json /tmp/daal_agg.hpp > /tmp/daal_ast.json 2> /tmp/daal_stderr.txt
+          echo "exit code: $?"
+          set -e
+          echo "=== full stderr (untruncated) ==="
+          cat /tmp/daal_stderr.txt
+          echo "=== end stderr ==="
+
       - name: Dump baseline snapshot (daal)
         uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main
         with:

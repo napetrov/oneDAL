@@ -70,6 +70,24 @@ jobs:
             "$AGENT_TOOLSDIRECTORY" /usr/local/lib/android /opt/hostedtoolcache
           df -h /
 
+      # cpp/daal/include/data_management/data/arrow_numeric_table.h
+      # unconditionally #includes <arrow/table.h> (an optional integration
+      # header for consumers who bring their own Apache Arrow -- oneDAL's own
+      # build never compiles it and apt.sh installs nothing for it). abicheck
+      # walks every header under -H cpp/daal/include with no per-file
+      # exclusion mechanism, so the header scan needs a real Arrow C++ dev
+      # package on the box or it fails to parse. libarrow-dev is not in
+      # Ubuntu's own repos -- install via Arrow's official apt source, per
+      # https://arrow.apache.org/install/.
+      - name: Install Apache Arrow (for arrow_numeric_table.h)
+        run: |
+          sudo apt-get install -y -V ca-certificates lsb-release wget
+          wget "https://apache.jfrog.io/artifactory/arrow/$(lsb_release --id --short | tr 'A-Z' 'a-z')/apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb"
+          sudo apt-get install -y -V ./apache-arrow-apt-source-latest-$(lsb_release --codename --short).deb
+          sudo apt-get update
+          sudo apt-get install -y -V libarrow-dev
+          rm -f apache-arrow-apt-source-latest-*.deb
+
       - name: Install DPC++
         working-directory: __baseline_src
         run: .ci/env/apt.sh dpcpp

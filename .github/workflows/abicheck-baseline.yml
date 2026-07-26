@@ -215,21 +215,25 @@ jobs:
       # cpp/oneapi/dal's own headers #include "oneapi/dal/..." (relative to
       # cpp/, not to cpp/oneapi/dal/ itself -- e.g.
       # basic_statistics_interop.hpp includes
-      # "oneapi/dal/algo/basic_statistics/common.hpp"), AND oneapi::dal's
-      # DAAL-interop layer (table_conversion.hpp etc.) pulls in classic DAAL
-      # headers like services/env_detect.h, which in turn #include
-      # "services/base.h" -- relative to cpp/daal/include/, a *different*
-      # root again. abicheck's implicit include-root heuristic only walks up
+      # "oneapi/dal/algo/basic_statistics/common.hpp"). oneapi::dal's
+      # DAAL-interop layer (table_conversion.hpp etc.) goes further and pulls
+      # in classic DAAL headers under BOTH cpp/daal/include/ (public API,
+      # e.g. services/env_detect.h's #include "services/base.h") AND
+      # cpp/daal/'s internal src/ tree (e.g.
+      # cpp/daal/src/data_management/service_numeric_table.h's #include
+      # "src/services/service_defines.h", relative to cpp/daal/ itself, not
+      # cpp/daal/include/) -- the real build has all three on its include
+      # path, but abicheck's implicit include-root heuristic only walks up
       # through directories literally named include/inc, so -H
-      # cpp/oneapi/dal alone never adds either root. Add both explicitly via
-      # `include`.
+      # cpp/oneapi/dal alone never adds any of them. Add all three
+      # explicitly via `include`.
       - name: Dump baseline snapshot (oneapi::dal)
         uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main
         with:
           mode: dump
           new-library: __baseline_src/__release_lnx/daal/latest/lib/intel64/libonedal.so
           new-header: __baseline_src/cpp/oneapi/dal
-          include: __baseline_src/cpp __baseline_src/cpp/daal/include
+          include: __baseline_src/cpp __baseline_src/cpp/daal/include __baseline_src/cpp/daal
           new-version: ${{ steps.baseline.outputs.tag }}
           depth: headers
           ast-frontend: clang

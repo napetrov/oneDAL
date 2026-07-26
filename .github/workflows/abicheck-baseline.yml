@@ -155,17 +155,19 @@ jobs:
       # each need their own library/baseline file.
       #
       # abicheck's clang-frontend castxml-parity system-include probe
-      # (abicheck.dumper_sysinc) treats any non-"clang"-named --gcc-path as a
-      # GNU compiler candidate to probe for its system include dirs -- it
-      # does not know about dumper_clang's icx/icpx/dpcpp alias list, so it
-      # probes icpx itself instead of falling back to g++/gcc. icpx's own
-      # `-E -v` system-include report is incomplete for plain libc (glibc's
-      # stdlib.h is missing from it, confirmed against a real run: "fatal
-      # error: 'stdlib.h' file not found" while parsing daal_string.h's
-      # <cstdlib> include chain), so pass -isystem /usr/include explicitly
-      # rather than relying on that probe.
+      # (abicheck.dumper_sysinc) used to treat any non-"clang"-named
+      # --gcc-path as a GNU compiler candidate to probe for its system
+      # include dirs, which made it probe icpx itself instead of falling
+      # back to g++/gcc -- icpx's own `-E -v` system-include report is
+      # incomplete for plain libc (glibc's stdlib.h missing from it, hit as
+      # "fatal error: 'stdlib.h' file not found" while parsing
+      # daal_string.h's <cstdlib> include chain). Fixed upstream in
+      # abicheck/abicheck#615 (probe now recognizes icx/icpx/dpcpp/dpcpp-cl
+      # as clang-family and skips them, falling through to the real g++/gcc
+      # on PATH) -- no manual -isystem workaround needed once pinned past
+      # that commit.
       - name: Dump baseline snapshot (daal)
-        uses: abicheck/abicheck@494d021f20adfec891ab6db3ab56ebf8f00d20aa # main
+        uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main
         with:
           mode: dump
           new-library: __baseline_src/__release_lnx/daal/latest/lib/intel64/libonedal_core.so
@@ -174,10 +176,10 @@ jobs:
           depth: headers
           ast-frontend: clang
           gcc-path: icpx
-          gcc-options: "-std=c++17 -isystem /usr/include -isystem /usr/include/x86_64-linux-gnu"
+          gcc-options: "-std=c++17"
           output-file: ".github/abicheck-baselines/${{ steps.baseline.outputs.tag }}-daal.abicheck.json"
       - name: Dump baseline snapshot (oneapi::dal)
-        uses: abicheck/abicheck@494d021f20adfec891ab6db3ab56ebf8f00d20aa # main
+        uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main
         with:
           mode: dump
           new-library: __baseline_src/__release_lnx/daal/latest/lib/intel64/libonedal.so
@@ -186,7 +188,7 @@ jobs:
           depth: headers
           ast-frontend: clang
           gcc-path: icpx
-          gcc-options: "-fsycl -std=c++17 -isystem /usr/include -isystem /usr/include/x86_64-linux-gnu"
+          gcc-options: "-fsycl -std=c++17"
           output-file: ".github/abicheck-baselines/${{ steps.baseline.outputs.tag }}-oneapi-dal.abicheck.json"
 
       # Commit the dumps directly into the repo (rather than a GitHub

@@ -125,6 +125,25 @@ jobs:
       - name: Ensure baseline output directory exists
         run: mkdir -p .github/abicheck-baselines
 
+      # oneapi/dal/backend/dispatcher_cpu.hpp #includes
+      # "oneapi/dal/_dal_cpu_dispatcher_gen.hpp", a file the build generates
+      # into $(WORKDIR)/oneapi/dal/ (makefile: ONEAPI.dispatcher_cpu) rather
+      # than checking it into the source tree -- the real oneDAL build has
+      # that WORKDIR on its include path, but abicheck's -H only ever sees
+      # the checked-in source. Find wherever the build actually put it (the
+      # exact __work<suffix>/... path depends on compiler/debug-mode
+      # suffixes we don't want to hardcode) and add its parent as an
+      # -I root.
+      - name: Locate the generated CPU-dispatcher header for the scan
+        run: |
+          gen=$(find __baseline_src -path '*/oneapi/dal/_dal_cpu_dispatcher_gen.hpp' -print -quit)
+          echo "Found: $gen"
+          test -n "$gen"
+          # gen == <root>/oneapi/dal/_dal_cpu_dispatcher_gen.hpp; the
+          # #include is "oneapi/dal/_dal_cpu_dispatcher_gen.hpp" (two path
+          # segments), so <root> is three dirname()s up from the file.
+          echo "DISPATCHER_GEN_INCLUDE_ROOT=$(dirname "$(dirname "$(dirname "$gen")")")" >> "$GITHUB_ENV"
+
       # cpp/daal/include/algorithms/moments/low_order_moments_distributed.h
       # uses Online<algorithmFPType, method> (lines 134/137/153) but only
       # #includes low_order_moments_types.h -- never
@@ -226,14 +245,16 @@ jobs:
       # path, but abicheck's implicit include-root heuristic only walks up
       # through directories literally named include/inc, so -H
       # cpp/oneapi/dal alone never adds any of them. Add all three
-      # explicitly via `include`.
+      # explicitly via `include`, plus the located dispatcher-gen root
+      # (previous step) for backend/dispatcher_cpu.hpp's #include
+      # "oneapi/dal/_dal_cpu_dispatcher_gen.hpp".
       - name: Dump baseline snapshot (oneapi::dal)
         uses: abicheck/abicheck@d278652a0ccf73fdd221a611edc5c9845817d12d # main
         with:
           mode: dump
           new-library: __baseline_src/__release_lnx/daal/latest/lib/intel64/libonedal.so
           new-header: __baseline_src/cpp/oneapi/dal
-          include: __baseline_src/cpp __baseline_src/cpp/daal/include __baseline_src/cpp/daal
+          include: __baseline_src/cpp __baseline_src/cpp/daal/include __baseline_src/cpp/daal ${{ env.DISPATCHER_GEN_INCLUDE_ROOT }}
           new-version: ${{ steps.baseline.outputs.tag }}
           depth: headers
           ast-frontend: clang

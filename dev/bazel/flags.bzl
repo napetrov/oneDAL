@@ -45,10 +45,16 @@ lnx_cc_flags = {
 # icx/icpx on Windows run in their native clang-cl driver mode, so flags
 # use MSVC-style spellings. Mirrors dev/make/compiler_definitions/{icx,dpcpp}.mkl.32e.mk
 # (COMPILER.win.icx / COMPILER.win.dpcpp).
+# NOTE: `-Qopenmp-simd` is deliberately absent here. icx rejects it together
+# with the debug CRT (`-Wdebug-option-simd`, fatal under `-WX`), so the flag
+# depends on the MSVC runtime and cannot be a repository-time constant. The
+# `runtime_library` feature in cc_toolchain_config_win.bzl adds it for
+# release-CRT builds only, matching `COMPILER.win.icx` in
+# dev/make/compiler_definitions/icx.mkl.32e.mk:77, which passes
+# `-MD -Qopenmp-simd` for the release runtime and a bare `-MDd` otherwise.
 win_icx_common_flags = [
     "-nologo",
     "-WX",
-    "-Qopenmp-simd",
     "-Wno-deprecated-declarations",
     "-Wno-ignored-attributes",
     "-Wno-empty-body",

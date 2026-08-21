@@ -24,6 +24,23 @@
 # (exit 64), so this file is deliberately limited to keys verified against
 # abicheck 0.5.0 / main.
 
+# ── Why this file is at the repository root and not in .github/abicheck/ ─────
+#
+# Everything else abicheck needs lives under .github/abicheck/ (policy.yaml,
+# baselines/, README.md). This one file cannot move there, for two reasons:
+#
+#  * abicheck discovers it by the literal name `.abicheck.yml`, starting at the
+#    working directory and walking *up* to the filesystem root
+#    (`discover_project_config`). It never looks inside .github/. Moving it
+#    means every local `abicheck scan`/`compare` invocation has to pass
+#    --config by hand, and a developer who forgets silently gets different
+#    scope and severity settings than CI uses.
+#  * `dump --sources`/`--build-info` -- the L3 build-context path this
+#    integration is expected to grow into -- reads `.abicheck.yml` at the
+#    *source-tree root only*, with no CLI override for its location.
+#
+# So it stays here, alongside .clang-format, .editorconfig and .bazelrc, which
+# are at the root for the same reason: their tools look for them there.
 version: 1
 
 # Public header surface. oneDAL exports two independent APIs from two
@@ -76,7 +93,7 @@ scope:
   public: true
 
 # Suppression-file hygiene. oneDAL deliberately ships no suppression file --
-# .github/.abicheck-policy.yaml reclassifies findings instead of deleting them,
+# .github/abicheck/policy.yaml reclassifies findings instead of deleting them,
 # so that every difference stays in the report; see the rationale there. These
 # two keys are inert while no --suppress is passed, and are kept so that any
 # suppression file added later has to be well-formed and has to justify every
@@ -98,7 +115,7 @@ suppression:
 # ABI break still fails the job. Silencing a *category* wholesale (preset
 # info-only) would also silence real breaks; the finding kinds oneDAL currently
 # needs to tolerate are reclassified individually, per kind, in
-# .github/.abicheck-policy.yaml, which keeps them in the report.
+# .github/abicheck/policy.yaml, which keeps them in the report.
 exit_code_scheme: severity
 
 severity:

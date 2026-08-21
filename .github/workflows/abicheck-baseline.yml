@@ -21,7 +21,7 @@
 #
 # The full picture -- why the snapshots are not committed themselves, why the
 # digest file is, why the tag has to be rebuilt rather than downloaded, and how
-# to rotate to a newer baseline -- is in .github/abi-checks.md.
+# to rotate to a newer baseline -- is in .github/abicheck/README.md.
 name: Publish Abicheck Baseline
 
 on:
@@ -124,7 +124,7 @@ jobs:
           rm -rf __work
 
       - name: Ensure output directories exist
-        run: mkdir -p "${ABICHECK_BASELINE_DIR}" .github/abicheck-baselines
+        run: mkdir -p "${ABICHECK_BASELINE_DIR}" .github/abicheck/baselines
 
       - name: Put icpx on PATH
         run: |
@@ -147,7 +147,7 @@ jobs:
       # also a parse root -- adding `-H cpp/oneapi` here makes icpx parse the
       # whole tree as one aggregate TU and exit 1 ("'services/base.h' file not
       # found"), the failure the explicit header list exists to avoid.
-      # .github/abi-checks.md ("Known gaps") records what that costs and what
+      # .github/abicheck/README.md ("Known gaps") records what that costs and what
       # would fix it.
       #
       # The .json.zst suffix is load-bearing: abicheck infers the compression
@@ -157,7 +157,7 @@ jobs:
       #
       # Keep this pin equal to the three in ci.yml's LinuxAbicheckScan job. A
       # baseline dumped by an older abicheck than the scanner does not fail --
-      # it silently under-reports. See .github/abi-checks.md.
+      # it silently under-reports. See .github/abicheck/README.md.
       - name: Dump baseline snapshot (daal)
         uses: abicheck/abicheck@76cce93a7b7bfc8f437d1850822afc94ab0566a3 # main
         with:
@@ -249,8 +249,8 @@ jobs:
         run: |
           set -euo pipefail
           sha256sum *.abicheck.json.zst \
-            > "${GITHUB_WORKSPACE}/.github/abicheck-baselines/${{ steps.baseline.outputs.tag }}.abicheck.sha256"
-          cat "${GITHUB_WORKSPACE}/.github/abicheck-baselines/${{ steps.baseline.outputs.tag }}.abicheck.sha256"
+            > "${GITHUB_WORKSPACE}/.github/abicheck/baselines/${{ steps.baseline.outputs.tag }}.sha256"
+          cat "${GITHUB_WORKSPACE}/.github/abicheck/baselines/${{ steps.baseline.outputs.tag }}.sha256"
 
       # Upload before committing the digest file, so main never references an
       # asset that does not exist yet.
@@ -296,7 +296,7 @@ jobs:
       - name: Commit baseline digests
         run: |
           set -euo pipefail
-          sums=".github/abicheck-baselines/${{ steps.baseline.outputs.tag }}.abicheck.sha256"
+          sums=".github/abicheck/baselines/${{ steps.baseline.outputs.tag }}.sha256"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$sums"
@@ -315,7 +315,7 @@ jobs:
             echo "Release: \`${{ steps.baseline.outputs.tag }}\`"
             echo ""
             echo '```'
-            cat ".github/abicheck-baselines/${{ steps.baseline.outputs.tag }}.abicheck.sha256"
+            cat ".github/abicheck/baselines/${{ steps.baseline.outputs.tag }}.sha256"
             echo '```'
             echo ""
             echo "Set \`ABICHECK_BASELINE_TAG\` in \`.github/workflows/ci.yml\` to this tag to gate PRs against it."

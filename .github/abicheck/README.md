@@ -1,4 +1,4 @@
-<!-- file: abi-checks.md
+<!-- file: README.md
 ******************************************************************************
 * Copyright contributors to the oneDAL project
 *
@@ -28,10 +28,28 @@ depending only on `LinuxMakeDPCPP` and never on each other:
 | evidence | the two binaries only (ELF symbols + whatever DWARF they carry) | this PR's **public-header AST** plus the binary's exported symbols |
 | artifacts | every `lib*.so` in the release directory | three named libraries (below) |
 | what it measures | did this PR change the ABI relative to `main` | has the ABI drifted since the last release |
-| filtering | `.github/.abignore` (libabigail suppressions) | `.github/.abicheck-policy.yaml` (re-classification, see [Gating](#gating)) |
+| filtering | `.github/.abignore` (libabigail suppressions) | `.github/abicheck/policy.yaml` (re-classification, see [Gating](#gating)) |
 | timeout | 20 min | 45 min |
 
 They are complementary, not redundant, and neither subsumes the other.
+
+## Where everything lives
+
+| path | what it is |
+|---|---|
+| `.github/abicheck/README.md` | this document |
+| `.github/abicheck/policy.yaml` | severity re-classification, passed as `policy-file:` |
+| `.github/abicheck/baselines/<tag>.sha256` | digests of the release assets for `<tag>` — the trust anchor, and the only baseline artifact in git |
+| `.abicheck.yml` | project config: public header surface + L2 compile context |
+| `.github/.abignore` | libabigail suppressions, used by the *other* job |
+
+`.abicheck.yml` is the one file not under `.github/abicheck/`, and
+deliberately so: abicheck finds it by that literal name, walking up from the
+working directory, and never looks in `.github/`. `dump --sources` (the L3
+build-context path) additionally reads it from the source-tree root only, with
+no override. Moving it would mean every local invocation had to pass `--config`
+by hand — and a developer who forgot would silently get different scope and
+severity than CI. The file itself carries this note.
 
 ## What each check sees that the other cannot
 
@@ -101,12 +119,37 @@ scan would report the entire SYCL surface as exported-but-not-declared.
 Scanning any one of these against another's headers would report every
 declaration as missing, which is why the roots are not shared.
 
-**Not covered by the scan**, and covered by `abidiff` instead:
-`libonedal_thread.so`, `libonedal_parameters.so`,
-`libonedal_parameters_dpc.so`. None of them has a public header surface of its
-own — they are implementation artifacts the install step copies — so a
-header-versus-exports comparison has nothing to compare for them. This is the
-one axis on which the scan is narrower than `abidiff`, and it is intentional.
+**Not covered by the scan**, and covered by `abidiff` instead — but for two
+different reasons, only one of which is a real design boundary:
+
+| library | exports | declared in a shipped header? |
+|---|---|---|
+| `libonedal_thread.so` | 290 | **no** — the `_daal_*` threading entry points are declared only in `cpp/daal/src/threading/threading.h`, which is not installed |
+| `libonedal_parameters.so` | 75 | **yes** — `class ONEDAL_EXPORT system_parameters` in `include/oneapi/dal/detail/parameters/system_parameters.hpp`, plus 27 installed `include/oneapi/dal/algo/*/parameters/` headers |
+| `libonedal_parameters_dpc.so` | 124 | **yes**, same headers under `-DONEDAL_DATA_PARALLEL` |
+
+So `libonedal_thread.so` genuinely has no public header surface — it is the
+internal C ABI between `libonedal_core.so` and its threading backend, and a
+header-versus-exports comparison has nothing to compare. The two
+`libonedal_parameters*` libraries are a different story: their exports *are*
+header-declared, they are simply not scanned yet. That is a gap, not a
+boundary. See [Known gaps](#known-gaps).
+
+This matters more than the export counts suggest, because oneDAL is one header
+tree implemented across six `.so` files that call into each other. Scanning
+each library in isolation against the shared header tree has two consequences:
+
+* every declaration the *other* libraries implement counts as
+  "declared here but not exported here" (2787 such declarations on
+  `libonedal.so`, 4974 on `libonedal_core.so`) — inherent to per-library
+  scanning, which is why those cross-checks are advisory rather than gating;
+* cross-library breakage is invisible. If `libonedal_thread.so` dropped
+  `_daal_parallel_sort_int32`, `libonedal_core.so` would fail to load — and no
+  per-library scan of either one reports it.
+
+abicheck has a layer built for exactly this (ADR-023 bundle analysis, which
+names oneDAL as its motivating case), and it is not what this integration
+currently uses. See [Known gaps](#known-gaps).
 
 No rebuild happens on the PR side: this job downloads the `__release_lnx`
 artifact `LinuxMakeDPCPP` already uploaded (which contains the `daal`,
@@ -166,7 +209,7 @@ so baselines refresh automatically for each new release. It:
    apply;
 4. uploads the three `.json.zst` files as **release assets**;
 5. commits only their `sha256sum` output to
-   `.github/abicheck-baselines/<tag>.abicheck.sha256`.
+   `.github/abicheck/baselines/<tag>.sha256`.
 
 The snapshots themselves are deliberately **not** in git. Compressed they are a
 few MiB each and uncompressed 115–152 MiB, over GitHub's 100 MiB per-file push
@@ -220,7 +263,7 @@ Two separate questions, answered by two separate mechanisms:
   location. Nothing is filtered out of the report.
 * *Did oneDAL break its ABI* — the severity model in `.abicheck.yml`
   (`exit_code_scheme: severity`), re-classified per finding by
-  `.github/.abicheck-policy.yaml`.
+  `.github/abicheck/policy.yaml`.
 
 `fail-on-breaking` / `fail-on-api-break` are deliberately unused: they only
 zero the *step's* exit status after the fact, while the CLI still exits 4 and
@@ -237,7 +280,7 @@ visibility regression produced a run whose visible finding set was identical to
 a clean one's, exit 0. A policy re-classification changes only the severity, so
 the finding stays in the list. That is the whole reason for the swap.
 
-`.github/.abicheck-policy.yaml` records each downgrade with its evidence and,
+`.github/abicheck/policy.yaml` records each downgrade with its evidence and,
 importantly, the class of break it gives up gating on. Four of the five are
 **selector-scoped** — naming the specific type, namespace, header or constant —
 so the gate stays live for everything the evidence does not cover: any other
@@ -248,7 +291,7 @@ because abicheck cannot yet narrow it (see below).
 ### Current state
 
 Measured against the `2026.0.0` baselines, on a no-debug-info build of both
-sides, with `.github/.abicheck-policy.yaml` in effect:
+sides, with `.github/abicheck/policy.yaml` in effect:
 
 | library | verdict | exit | risk | compatible | wall | peak RSS |
 |---|---|---|---|---|---|---|
@@ -275,6 +318,28 @@ as something to read, not as a regression by itself.
 
 ## Known gaps
 
+* **`libonedal_parameters.so` / `libonedal_parameters_dpc.so` are not
+  scanned**, although their exports are declared in shipped headers. Adding
+  two more `scan` steps is mechanical; the reason to think first is that it
+  would be the fifth and sixth per-library scan of the *same* header tree, and
+  the per-library model is the thing worth revisiting (next item).
+* **Bundle analysis is not used.** oneDAL is one header tree implemented across
+  six interdependent `.so` files, which is precisely the shape abicheck's
+  ADR-023 bundle layer exists for — it names oneDAL as its motivating case. It
+  catches what no per-library scan can: a sibling dropping a symbol another
+  sibling imports (`bundle_intra_dep_removed`), `extern "C"` signature drift
+  across a DSO boundary, cross-DSO type drift through template-instantiated
+  symbols, and provider migration between libraries. It runs by default on
+  `abicheck compare <old_dir> <new_dir> -H <headers>` and covers every library
+  in one invocation.
+  The blocker is the baseline format, not the analysis: bundle findings are
+  derived from ELF `DT_NEEDED` and `.gnu.version_r`/`.gnu.version_d` read
+  directly from the `.so` files, so the old side has to be **binaries**, not
+  snapshots. Measured on this build, the six libraries are 145.4 MB raw and
+  **28.1 MB as a single `tar.zst`** — comfortably inside the 2 GiB release-asset
+  limit, and one asset instead of three. That is the shape a follow-up should
+  take; it also replaces three per-library baselines with one archive.
+  Bundle analysis is ELF/Linux-only, which is fine for this gate.
 * **`public-header-dir` cannot be passed.** `scan` has a provenance-only
   `--public-header-dir`; `dump` does not — its provenance comes from `-H`,
   where a *directory* entry is also a parse root, and for oneDAL that parse

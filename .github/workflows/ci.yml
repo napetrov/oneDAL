@@ -191,11 +191,22 @@ jobs:
       ! contains(toJson(github.event.pull_request.labels.*.name), '"API/ABI breaking change"')
     runs-on: ubuntu-24.04
     # Measured with the abicheck commit pinned below, on the same
-    # no-debug-info build LinuxMakeDPCPP produces: libonedal_core.so scan
-    # M_SCAN_DAAL, libonedal.so M_SCAN_ONEAPI, libonedal_dpc.so M_SCAN_DPC.
-    # Peak RSS M_RSS_DAAL / M_RSS_ONEAPI / M_RSS_DPC -- all inside a 16 GB
-    # standard runner. 45 minutes covers the three scans plus the DPC++ apt
-    # install and the artifact download.
+    # no-debug-info build LinuxMakeDPCPP produces, each against a baseline
+    # dumped from an equally no-debug-info build of the tag. Taken in an
+    # ubuntu:24.04 container running the same apt oneAPI packages this job
+    # installs; a scan is a single process at ~99% CPU, so these track
+    # single-core speed and a runner will land in the same range rather than on
+    # the same number:
+    #
+    #   libonedal_core.so   7m13s   3.48 GB peak RSS
+    #   libonedal.so        4m07s   2.45 GB
+    #   libonedal_dpc.so   11m24s   6.56 GB
+    #
+    # 22m44s of scanning and a 6.56 GB peak, so all three fit a 16 GB standard
+    # runner with room to spare. 45 minutes covers the three scans plus the
+    # DPC++ apt install and the artifact download. libonedal_dpc.so is the long
+    # pole on both axes -- if this job starts timing out, that is the one to
+    # look at first.
     #
     # Do not read anything into a *rerun* being much faster: abicheck caches
     # the candidate snapshot, so only the first run on a fresh runner is

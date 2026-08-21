@@ -41,14 +41,24 @@ jobs:
   PublishBaseline:
     if: github.repository == 'uxlfoundation/oneDAL'
     runs-on: ubuntu-24.04
-    # Measured end to end against the abicheck commit pinned below, on the
-    # no-debug-info build this workflow produces: the three builds take
-    # M_BUILD_ALL together, the daal snapshot M_DUMP_DAAL, oneapi::dal
-    # M_DUMP_ONEAPI and oneapi::dal-dpc M_DUMP_DPC. Peak RSS M_DRSS_DAAL /
-    # M_DRSS_ONEAPI / M_DRSS_DPC, all inside a 16 GB standard runner -- an
-    # earlier revision of this workflow had to fallocate a 16 G swapfile, which
-    # abicheck's bounded DWARF DIE cache removed (a time-for-memory trade,
-    # which is why this timeout stays generous rather than dropping).
+    # This job is dominated by the three builds, which is why the timeout is
+    # 180 minutes rather than something close to the dump cost. The dumps
+    # themselves, measured against the abicheck commit pinned below in an
+    # ubuntu:24.04 container running the same apt oneAPI packages installed
+    # here:
+    #
+    #   libonedal_core.so  17m59s   4.00 GB peak RSS
+    #   libonedal.so        4m42s   1.87 GB
+    #   libonedal_dpc.so   12m11s   5.01 GB
+    #
+    # so ~35 minutes of dumping and a 5.01 GB peak, inside a 16 GB standard
+    # runner. An earlier revision had to fallocate a 16 G swapfile; abicheck's
+    # bounded DWARF DIE cache removed the need (a time-for-memory trade, which
+    # is the other reason this timeout stays generous). A dump is a single
+    # process at ~99% CPU, so it tracks single-core speed; the *builds* are
+    # parallel and will be far slower on a 4-core runner than on the machine
+    # these figures came from, so treat the build share of the budget as the
+    # uncertain one.
     timeout-minutes: 180
     env:
       ABICHECK_BASELINE_DIR: __abi_baselines

@@ -245,6 +245,34 @@ type's vtable change, any experimental removal outside `preview`, and every
 other constant all still gate. Only `func_visibility_changed` is kind-global,
 because abicheck cannot yet narrow it (see below).
 
+### Current state
+
+Measured against the `2026.0.0` baselines, on a no-debug-info build of both
+sides, with `.github/.abicheck-policy.yaml` in effect:
+
+| library | verdict | exit | risk | compatible | wall | peak RSS |
+|---|---|---|---|---|---|---|
+| `libonedal_core.so` | `COMPATIBLE_WITH_RISK` | 0 | 78 | 1 | 7m13s | 3.48 GB |
+| `libonedal.so` | `COMPATIBLE_WITH_RISK` | 0 | 27 | 45 | 4m07s | 2.45 GB |
+| `libonedal_dpc.so` | `COMPATIBLE_WITH_RISK` | 0 | 47 | 49 | 11m24s | 6.56 GB |
+
+`libonedal_core.so` being almost entirely `risk` is expected and temporary: the
+`2026.0.0` baseline predates `makefile` gaining `-fvisibility-inlines-hidden`,
+so `main` dropped a large number of WEAK COMDAT inline/template exports. The
+code was not removed — those symbols are still defined as LOCAL FUNC in the new
+binaries' `.symtab` — only their export visibility was demoted. This clears
+itself once a post-`-fvisibility-inlines-hidden` release becomes the baseline.
+
+The policy's effect is accountable rather than a blanket mute. On
+`libonedal.so` the same scan without the policy file reports
+`breaking=6 api_break=4 risk=17 compatible=45` and exits 4; with it,
+`breaking=0 api_break=0 risk=27 compatible=45` and exit 0 — the 6 + 4
+re-classified findings are exactly the 17 → 27 difference, and they stay in the
+printed report either way.
+
+Until the `risk` bucket has had a burn-in period, treat a change in these counts
+as something to read, not as a regression by itself.
+
 ## Known gaps
 
 * **`public-header-dir` cannot be passed.** `scan` has a provenance-only

@@ -30,9 +30,11 @@ on:
   push:
     branches:
       - main
+      - cq-test-base
   pull_request:
     branches:
       - main
+      - cq-test-base
   schedule:
     - cron: '17 4 * * 1'
 

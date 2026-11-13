@@ -1,5 +1,7 @@
 # AGENTS.md - oneDAL
 
+You own the codebase.
+
 oneDAL is a C++ machine learning library with two interfaces: DAAL (`cpp/daal`, CPU) and oneAPI (`cpp/oneapi`, CPU and SYCL GPU). Make builds releases, Bazel runs tests (`dev/`); CI lives in `.ci/` and `.github/`. It is the backend for [scikit-learn-intelex](https://github.com/uxlfoundation/scikit-learn-intelex).
 Also at the top level: `examples/`, `samples/` (MPI/CCL), `docs/`, `data/`, `deploy/`, `cmake/` (release CMake configs), `conda-recipe/`.
 
